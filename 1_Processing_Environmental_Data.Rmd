@@ -1,0 +1,551 @@
+---
+title: "Processing_Environmental_Data"
+author: "Tessa Rehill"
+date: "2024-11-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load libraries 
+```{r}
+library(readxl)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(ggplot2)
+library(readr)
+library(patchwork)
+```
+
+#HOBO LOGGER DATA 
+```{r}
+#Set the path to your main folder
+main_folder <- "./raw_data/HOBO"
+
+#Get a list of site folders within the main folder
+site_folders <- list.dirs(main_folder, recursive = FALSE)
+
+#Loop through each site folder
+for (site_folder in site_folders) {
+  #Get a list of Excel files in the current site folder
+  excel_files <- list.files(site_folder, pattern = "\\.xlsx$", full.names = TRUE)
+  
+  #Read and process each Excel file
+  site_data <- map_dfr(excel_files, function(file) {
+    data <- read_excel(file)
+    
+    #Rename columns
+    colnames(data) <- c('n', 'date', 'temperature_c', 'light_lux')
+    
+    #Return the data
+    return(data)
+  })
+  
+  #Create the output file path
+  output_file <- file.path(site_folder, "combined_dataset.csv")
+  
+  #Save the combined data for the site to the associated folder
+  write.csv(site_data, output_file, row.names = FALSE)
+  
+  cat(paste("Combined dataset saved in:", output_file, "\n"))
+}
+
+
+#Read each combined file and add another column called site 
+ek<- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/ED_KING/combined_dataset.csv") 
+  ek$Site <- "EK"
+dx<- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/DIXON/combined_dataset.csv") 
+  dx$Site <- "DX"
+es <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/ELLIS_S/combined_dataset.csv") 
+  es$Site <- "ES"
+en <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/ELLIS_N/combined_dataset.csv") 
+  en$Site <- "EN"
+tr <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/TAYLOR/combined_dataset.csv") 
+  tr$Site <- "TR"
+nn <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/HOBO/NANAT/combined_dataset.csv") 
+  nn$Site <- "NN"
+
+#Combine all site files and add to processed data folder 
+hobo_combined <- rbind(ek, dx, es, en, tr, nn)
+
+#Remove anamolies (likely when taking them out)
+hobo_combined <- hobo_combined %>%
+  filter(temperature_c <= 20)
+
+write.csv(hobo_combined, 
+"/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/HOBO/combined_hobo.csv", 
+          row.names = FALSE)
+
+#read file back in 
+hobo <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/HOBO/combined_hobo.csv")
+```
+
+##Light lux over time
+```{r}
+#Read and preprocess the data
+hobo <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/HOBO/combined_hobo.csv")
+
+hobo$date <- as.Date(hobo$date)
+
+hobo_filtered <- hobo %>% #only choose months of study period
+  filter(format(date, "%m") %in% c("03", "04", "05", "06", "07"))  
+  
+
+#Calculate daily mean light lux by site and date
+hobo_daily_mean <- hobo_filtered %>%
+  group_by(Site, date) %>%
+  summarize(daily_mean_light_lux = mean(light_lux, na.rm = TRUE), .groups = "drop")
+
+#Define a threshold for gaps (e.g., 7 days)
+gap_threshold <- 7
+
+#Identify gaps and set light to NA for gaps
+hobo_daily_mean <- hobo_daily_mean %>%
+  arrange(Site, date) %>%
+  group_by(Site) %>%
+  mutate(
+    time_diff = c(NA, diff(date)),
+    daily_mean_light_lux = ifelse(time_diff > gap_threshold, NA, daily_mean_light_lux)  # Break lines at gaps
+  ) %>%
+  ungroup()  # Make sure to ungroup after modifying data
+
+
+#Plot the daily mean of light availability over time by site
+plot_light <- ggplot(hobo_daily_mean, aes(x = date, y = daily_mean_light_lux, color = Site)) +
+  geom_line(aes(group = Site), na.rm = TRUE) +  # Avoid gaps and handle missing values
+  labs(
+    x = "Date",
+    y = "Daily Mean Light (lux)",
+    color = "Site"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+  ) +
+  scale_color_manual(
+    values = c(
+      "EK" = "#FF5733",
+      "EN" = "#4da607",
+      "ES" = "grey",
+      "NN" = "#62a4ea",
+      "DX" = "#eacf62",
+      "TR" = "#076fa6"
+    )
+  )
+
+plot_light 
+
+#save plot 
+ggsave("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/plots/environmental_supps/meanlight.jpg", plot = plot_light, width = 9, height = 6, dpi = 300)
+
+#save 
+
+start_date <- as.Date("2024-03-01")
+end_date <- as.Date("2024-08-01")
+
+light <- plot_light + scale_x_date(limits = c(start_date, end_date)) + theme(axis.title.x = element_blank(), legend.position = "none", axis.text.x = element_blank())
+
+light
+```
+##Determine flux (light) range by site for supplemental table 
+```{r}
+hobo_summary <- hobo_daily_mean %>%
+  group_by(Site) %>%
+  summarise(
+    min_light = min(daily_mean_light_lux, na.rm = TRUE),
+    max_light = max(daily_mean_light_lux, na.rm = TRUE),
+    mean_light = mean(daily_mean_light_lux, na.rm = TRUE)
+  )
+
+hobo_summary
+
+#save table 
+write.csv(hobo_summary, "/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/Range_supp/light_summary_supp.csv", row.names = FALSE)
+
+```
+
+#ENV LOGGER DATA
+```{r}
+#Set the path to your main folder
+main_folder <- "./raw_data/ENV"
+
+#Get a list of site folders within the main folder
+site_folders <- list.dirs(main_folder, recursive = FALSE)
+
+#Loop through each site folder
+for (site_folder in site_folders) {
+  #Get a list of Excel files in the current site folder
+  excel_files <- list.files(site_folder, pattern = "\\.csv$", full.names = TRUE)
+  
+  #Read and process each Excel file
+  site_data <- map_dfr(excel_files, function(file) {
+    data <- read_csv(file)
+    
+    #Rename columns
+    colnames(data) <- c('time', 'temperature_c')
+    
+    #Return the data
+    return(data)
+  })
+  
+  #Create the output file path
+  output_file <- file.path(site_folder, "combined_dataset.csv")
+  
+  #Save the combined data for the site to the associated folder
+  write.csv(site_data, output_file, row.names = FALSE)
+  
+  cat(paste("Combined dataset saved in:", output_file, "\n"))
+}
+
+
+#Read each combined file and add another column called site 
+ek<- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/ED_KING/combined_dataset.csv") 
+  ek$Site <- "EK"
+dx<- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/DIXON/combined_dataset.csv") 
+  dx$Site <- "DX"
+es <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/ELLIS_S/combined_dataset.csv") 
+  es$Site <- "ES"
+en <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/ELLIS_N/combined_dataset.csv") 
+  en$Site <- "EN"
+tr <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/TAYLOR/combined_dataset.csv") 
+  tr$Site <- "TR"
+nn <-read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/ENV/NANAT/combined_dataset.csv") 
+  nn$Site <- "NN"
+
+#Combine all site files and add to processed data folder 
+env_combined <- rbind(ek, dx, es, en, tr, nn)
+
+#Remove anomalies (likely when taking loggers out of ocean )
+env_combined <- env_combined %>%
+  filter(temperature_c <= 20)
+
+write.csv(env_combined, 
+"/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/combined_env.csv", 
+          row.names = FALSE)
+
+
+```
+
+#TILT CURRENT METERS 
+```{r}
+
+#Set the path to your main folder
+main_folder <- "/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters"
+
+#Get a list of site folders within the main folder
+site_folders <- list.dirs(main_folder, recursive = FALSE)
+
+#Loop through each site folder
+for (site_folder in site_folders) {
+  #Get a list of Excel files in the current site folder
+  excel_files <- list.files(site_folder, pattern = "\\.csv$", full.names = TRUE)
+  
+  #Read and process each Excel file
+  site_data <- map_dfr(excel_files, function(file) {
+    data <- read_csv(file)
+    
+    #Rename columns
+    colnames(data) <- c('date', 'speed_mpers', 'heading', 'speed_upper', 'speed_lowe', 'tilt_rad','direction','batt_volts', 'temp_c')
+    
+    #Return the data
+    return(data)
+  })
+  
+  #Create the output file path
+  output_file <- file.path(site_folder, "combined_dataset.csv")
+  
+  #Save the combined data for the site to the associated folder
+  write.csv(site_data, output_file, row.names = FALSE)
+  
+  cat(paste("Combined dataset saved in:", output_file, "\n"))
+}
+
+column_names <- colnames(read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/EK/combined_dataset.csv", nrows = 1))
+
+ek <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/EK/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+ek$Site <- "EK"
+
+dx <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/DX/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+dx$Site <- "DX"
+
+es <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/ES/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+es$Site <- "ES"
+
+en <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/EN/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+en$Site <- "EN"
+
+tr <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/TR/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+tr$Site <- "TR"
+
+nn <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/raw_data/Tilt_meters/NN/combined_dataset.csv", 
+               skip = 136792, col.names = column_names)
+nn$Site <- "NN"
+
+
+#Combine all site files and add to processed data folder 
+tilt_combined <- rbind(ek, dx, es, en, tr, nn)
+
+
+write.csv(tilt_combined, 
+"/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/combined_tilt.csv", 
+          row.names = FALSE)
+```
+
+##Plotting tilt data 
+```{r}
+tilt <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/combined_tilt.csv")
+
+#convert time to date format
+tilt$date <- as.Date(tilt$date)
+
+#filter and process the data
+tilt_filtered <- tilt %>%
+  filter(speed_mpers < 0.35) %>%
+  filter(format(date, "%m") %in% c("03", "04", "05", "06"))  %>% 
+  filter(!(date >= "2024-06-24" & date <= "2024-06-28"))  %>% 
+  filter(!(date >= "2024-05-15" & date <= "2024-05-17")) %>% 
+  filter(!(date >= "2024-07-01" & date <= "2024-12-01"))
+
+  
+#smooth the data by calculating daily mean and max variables for each site
+tilt_summary <- tilt_filtered %>%
+  group_by(Site, date, speed_mpers) %>%
+  summarise(mean_speed_mpers = mean(speed_mpers), 
+            max_speed_mpers = max(speed_mpers), 
+            mean_max_speed = mean(speed_upper), 
+            max_max_speed = max(speed_upper))
+                                    
+
+write.csv(tilt_summary, "/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/tilt_summary.csv", row.names = FALSE)
+
+# Plot the smoothed data
+plot <- ggplot(tilt_summary, aes(x = date, y = mean_speed_mpers, color = Site)) + 
+  geom_line() +  # Line plot for temperature over time
+  labs(
+    title = "Daily Mean Speed Over Time by Site",
+    x = "Date",
+    y = "Mean Daily Speed (m/s)",
+    color = "Site"
+  ) +
+  theme_minimal() +  # Apply a clean theme
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for better readability
+  ) +
+  scale_color_manual(
+    values = c(
+      "EK" = "#FF5733",
+      "EN" = "#4da607",
+      "ES" = "grey",
+      "NN" = "#62a4ea",
+      "DX" = "#eacf62",
+      "TR" = "#076fa6"
+    )
+  ) +
+  facet_wrap(~Site, scales = "free_y")  # Create separate panels for each site with individual y-scales
+
+plot
+
+
+#Smooth the data by calculating daily mean for each site
+tilt_plot <- tilt_summary %>%
+  group_by(Site, date) %>%
+  summarise(mean_speed_mpers = mean(mean_speed_mpers, na.rm = TRUE)) %>%
+  ungroup()
+
+
+# lot the daily mean over time by site
+plot_current <- ggplot(tilt_plot, aes(x = date, y = mean_speed_mpers, color = Site)) +
+  geom_line(aes(group = Site), na.rm = TRUE) +  # Avoid gaps and handle missing values
+  labs(
+    x = "Date",
+    y = "Daily Mean Current Speed (m/s)",
+    color = "Site"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+  ) +
+  scale_color_manual(
+    values = c(
+      "EK" = "#FF5733",
+      "EN" = "#4da607",
+      "ES" = "grey",
+      "NN" = "#62a4ea",
+      "DX" = "#eacf62",
+      "TR" = "#076fa6"
+    )
+  )
+
+plot_current 
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/plots/environmental_supps/current.jpg", plot = plot_current, width = 9, height = 6, dpi = 300)
+
+
+start_date <- as.Date("2024-03-01")
+end_date <- as.Date("2024-08-01")
+
+current <- plot_current + scale_x_date(limits = c(start_date, end_date)) + theme(axis.title.x = element_blank(), legend.position = "none")
+
+current
+```
+###Determine tilt_plot range by site for supplemental table 
+```{r}
+tilt_summary <- tilt_plot %>%
+  group_by(Site) %>%
+  summarise(
+    min_current = min(mean_speed_mpers, na.rm = TRUE),
+    max_current = max(mean_speed_mpers, na.rm = TRUE),
+    mean_current = mean(mean_speed_mpers, na.rm = TRUE)
+  )
+
+tilt_summary
+
+#save table 
+write.csv(tilt_summary, "/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/Range_supp/current_summary_supp.csv", row.names = FALSE)
+
+```
+
+#Plotting temperature (using both ENV and HOBO)
+##read in data and combine + summarize across both dataset 
+```{r}
+hobo <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/HOBO/combined_hobo.csv")
+env <- read.csv("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/combined_env.csv")
+
+hobo <- hobo %>%
+  select(-n, -light_lux) %>%
+  rename(time = date)
+
+combined_data <- rbind(hobo, env)
+
+#summarize
+#Convert time to date format
+combined_data$date <- as.Date(combined_data$time)
+
+#Filter and process the data
+env_filtered <- combined_data %>%
+  filter(format(date, "%m") %in% c("03", "04", "05", "06", "07"))  %>% 
+  arrange(Site, date) %>%                 # Sort by Site and date
+  group_by(Site) %>%                      # Group by site
+  mutate(
+    time_diff = c(NA, diff(date)),        # Calculate time differences between dates
+    temperature_c = ifelse(time_diff > 7, NA, temperature_c) # Set temperature to NA for gaps > 7 days
+  ) %>%
+  ungroup() %>% #removing dates within monitoring periods 
+  filter(!(date >= "2024-06-24" & date <= "2024-06-28")) %>% # Remove dates between June 24 and June 28
+  filter(!(date >= "2024-03-31" & date <= "2024-04-06")) %>% # Remove dates between March 31 and April 6
+  filter(!(date >= "2024-05-12" & date <= "2024-05-18")) %>% # Remove dates between March 31 and April 6
+  filter(!(date >= "2024-08-04" & date <= "2024-08-10"))
+  
+#Smooth the data by calculating daily mean temperature for each site
+env_smoothed <- env_filtered %>%
+  group_by(Site, date) %>%
+  summarise(temperature_c = mean(temperature_c, na.rm = TRUE)) %>%
+  ungroup()
+
+#Plot the smoothed data
+plot <- ggplot(env_smoothed, aes(x = date, y = temperature_c, color = Site)) + 
+  geom_line() +  # Line plot for temperature over time
+  labs(
+    title = "Daily Mean Temperature Over Time by Site",
+    x = "Date",
+    y = "Temperature (°C)",
+    color = "Site"
+  ) +
+  theme_minimal() +  # Apply a clean theme
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for better readability
+  ) +
+  scale_color_manual(
+    values = c(
+      "EK" = "#FF5733",
+      "EN" = "#4da607",
+      "ES" = "grey",
+      "NN" = "#62a4ea",
+      "DX" = "#eacf62",
+      "TR" = "#076fa6"
+    )
+  ) +
+  facet_wrap(~Site, scales = "free_y")  # Create separate panels for each site with individual y-scales
+
+plot 
+
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/plots/environmental_supps/meantemp_bysite.jpg", plot = plot, width = 9, height = 6, dpi = 300)
+
+
+#Plot temperature vs. time, colored by site (all on the same graph)
+plot_temp <- plot <- ggplot(env_smoothed, aes(x = date, y = temperature_c, color = Site)) + 
+  geom_line() +  # Line plot for temperature over time
+  labs(
+    x = "Date",
+    y = "Daily Mean Temperature (°C)",
+    color = "Site"
+  ) +
+  theme_minimal() +  # Apply a clean theme
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for better readability
+  ) +
+  scale_color_manual(
+    values = c(
+      "EK" = "#FF5733",
+      "EN" = "#4da607",
+      "ES" = "grey",
+      "NN" = "#62a4ea",
+      "DX" = "#eacf62",
+      "TR" = "#076fa6"
+    )
+  )  # Set custom colors for sites
+
+plot_temp 
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/plots/environmental_supps/meantemp.jpg", plot = plot_temp, width = 9, height = 6, dpi = 300)
+
+
+start_date <- as.Date("2024-03-01")
+end_date <- as.Date("2024-08-01")
+
+temp <- plot_temp + 
+  scale_x_date(limits = c(start_date, end_date)) + 
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+temp
+
+```
+
+###Determine temperature range by site for supplemental table 
+```{r}
+env_summary <- env_smoothed %>%
+  group_by(Site) %>%
+  summarise(
+    min_temp = min(temperature_c, na.rm = TRUE),
+    max_temp = max(temperature_c, na.rm = TRUE),
+    mean_temp = mean(temperature_c, na.rm = TRUE)
+  )
+
+env_summary
+
+#save table 
+write.csv(env_summary, "/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/processed_data/ENV/Range_supp/temp_summary_supp.csv", row.names = FALSE)
+
+```
+
+#Combining plots 
+```{r}
+
+#Combine the two plots vertically
+combined_plot <- temp / light / current
+
+#Display the combined plot
+print(combined_plot)
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Grazer_exclusion/plots/environmental_supps/combined_env.jpg", plot = combined_plot, width = 9, height = 15, dpi = 300)
+
+```
+

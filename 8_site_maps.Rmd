@@ -1,0 +1,280 @@
+---
+title: "Site Map"
+author: "Tessa Rehill"
+date: "2024-12-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#read libraries 
+```{r}
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(maps)
+library(dplyr)
+library(ggmap)
+library(maps)
+library(ggspatial)
+
+```
+
+#read data 
+```{r}
+#read data 
+sites <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/raw_data/metadata/site_coordinates.csv")
+```
+
+#use ggmaps to create a map of the study area 
+```{r}
+#register API to use ggmaps
+register_google('AIzaSyBG4StmTBuRubdtKeUZWPt-1E1F08uWc-U') #register API 
+
+register_stadiamaps("6d8a12a4-632a-40eb-8730-e997a9e3f9ed")
+```
+
+#create a baseline map for Canada (as an inset)
+```{r}
+#map of Canada
+map.canada <- map_data("world", region = "Canada")
+
+p1 <- ggplot(map.canada, aes(x = long, y = lat, group = group))
+p1 <- p1 + geom_polygon(fill = "grey", color = "white") # Set fill to white, color to grey, and fill.alpha to 1
+p1 <- p1 + theme_void() # Use a void theme for a clean background
+
+
+p1 #display the map of Canada
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/maps/canada.png", 
+       plot = p1,
+       width = 5, height = 5, units = "in")
+```
+
+#creating map of Vancouver Island 
+```{r}
+#changing colors 
+map.for.samples <- get_stadiamap(
+  bbox = c(left = -128, bottom = 48, right = -123, top = 51), # Bounding box
+  maptype = "stamen_toner_background",                        # Map type
+  zoom = 8                                                    # Zoom level (adjust as needed)
+)
+
+ggmap::ggmap(map.for.samples)
+
+#invert colors in raster
+invert <- function(x) rgb(t(255-col2rgb(x))/255)    
+m_inv <- as.raster(apply(map.for.samples, 2, invert))
+
+#copy attributes from original object
+class(m_inv) <- class(map.for.samples)
+attr(m_inv, "bb") <- attr(map.for.samples, "bb")
+
+ggmap(m_inv)
+
+map.for.samples <- m_inv
+
+#change opacity of basemap, to match Canada inset 
+mapatt <- attributes(map.for.samples)
+map_transparent <- matrix(adjustcolor(map.for.samples, alpha.f = 0.2), nrow = nrow(map.for.samples))
+attributes(map_transparent) <- mapatt
+
+#changing colors and removing grid lines
+ggmap(map_transparent) +
+  theme_void()  # This removes grid lines and other background elements
+
+p2 <- ggmap(map_transparent) +
+  theme_void()  # This removes grid lines and other background elements
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/maps/vancouver_island.png", 
+       plot = p2,
+       width = 5, height = 5, units = "in")
+
+```
+
+
+#creating map of sites (in Barkley sound )
+```{r}
+#changing colors 
+map.for.samples <- get_stadiamap(
+  bbox = c(left = -125.4, bottom = 48.75, right = -124.75, top = 49), # Bounding box
+  maptype = "stamen_toner_background",                        # Map type
+  zoom = 11                                                    # Zoom level (adjust as needed)
+)
+
+ggmap::ggmap(map.for.samples)
+
+# invert colors in raster
+invert <- function(x) rgb(t(255-col2rgb(x))/255)    
+m_inv <- as.raster(apply(map.for.samples, 2, invert))
+
+#copy attributes from original object
+class(m_inv) <- class(map.for.samples)
+attr(m_inv, "bb") <- attr(map.for.samples, "bb")
+
+ggmap(m_inv)
+
+map.for.samples <- m_inv
+
+#change opacity of basemap, to match Canada inset 
+mapatt <- attributes(map.for.samples)
+map_transparent <- matrix(adjustcolor(map.for.samples, alpha.f = 0.2), nrow = nrow(map.for.samples))
+attributes(map_transparent) <- mapatt
+
+
+map.for.samples <- ggmap(map_transparent) + 
+  theme(panel.grid = element_blank(), panel.background = element_rect(fill = 'white'))+
+  geom_text(data = sites,
+            aes(x = lon_decimal, y = lat_decimal, label = site, fontface = "bold"),
+            size = 5, position = position_jitter(width = 0.045, height = 0.045)) +
+  ylab("latitude") + xlab("longitude") +
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        axis.text = element_text(size = 10))  # Adjust the size of axis text
+
+map.for.samples
+
+#define density colors 
+density_colors <- c('low' = '#4da607', 'medium' = '#f9cd44', 'high' = '#cd3737')
+
+sites$density <- factor(sites$density, levels = c("high", "medium", "low"))
+
+#modify your ggmap plot
+map.for.samples <- ggmap(map_transparent) + 
+  theme(panel.grid = element_blank(), panel.background = element_rect(fill = 'white')) +
+  geom_point(data = sites, 
+             aes(x = lon_decimal, y = lat_decimal, color = density), 
+             size = 3) +  # Adjust size of the points
+  scale_color_manual(values = density_colors) +  # Apply color mapping
+  geom_text(data = sites, 
+            aes(x = lon_decimal, y = lat_decimal, label = site), 
+            size = 3,  # Adjust the size of the labels
+            #position = position_jitter(width = 0.0045, height = 0.0045),  # Only apply jitter to labels
+            hjust = -0.06, # Adjust the vertical position of the labels
+            vjust = -0.03,
+            fontface = "bold", color = "black") +  # Label styling
+  ylab("Latitude") + xlab("Longitude") +
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        axis.text = element_text(size = 10))  # Adjust the size of axis text
+
+#display the map
+map.for.samples
+
+p3 <- map.for.samples
+
+ggsave("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/maps/sites.png", 
+       plot = p3,
+       width = 7, height = 6, units = "in")
+
+
+
+```
+#Adding symbology and north arrow 
+```{r}
+library(ggplot2)
+library(ggmap)
+library(ggspatial)
+
+# Define colors and shapes for density levels
+density_colors <- c('low' = '#4da607', 'medium' = '#f9cd44', 'high' = '#cd3737')
+density_shapes <- c('low' = 15, 'medium' = 16, 'high' = 17)  # Square, Circle, Triangle
+
+# Ensure 'density' is a factor with correct level order
+sites$density <- factor(sites$density, levels = c("high", "medium", "low"))
+
+# Modify ggmap plot
+map.for.samples <- ggmap(map_transparent) + 
+  theme(panel.grid = element_blank(), 
+        panel.background = element_rect(fill = 'white')) +
+  
+  # Plot points with different colors and shapes
+  geom_point(data = sites, 
+             aes(x = lon_decimal, y = lat_decimal, color = density, shape = density), 
+             size = 3) +  
+  
+  # Apply color and shape mapping
+  scale_color_manual(values = density_colors) +
+  scale_shape_manual(values = density_shapes) +
+  
+  # Add site labels
+  geom_text(data = sites,
+            aes(x = lon_decimal, y = lat_decimal, label = site),
+            size = 3, fontface = "bold", color = "black",
+            hjust = -0.06, vjust = -0.03) +
+  
+  # Add north arrow
+  annotation_north_arrow(location = "topleft", 
+                         which_north = "true", 
+                         style = north_arrow_fancy_orienteering) +
+
+  # Axis labels and formatting
+  ylab("Latitude") + xlab("Longitude") + 
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        axis.text = element_text(size = 10))  
+
+# Display the map
+map.for.samples
+
+# Save the plot
+ggsave("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/maps/sites.png",
+       plot = map.for.samples, width = 7, height = 6, units = "in")
+
+map.for.samples + 
+
+```
+#troubleshooting
+```{r}
+
+
+# Ensure your map data has a CRS
+map_transparent <- st_as_sf(map_transparent, coords = c("lon", "lat"), crs = 4326)
+
+# Modify ggmap plot
+map.for.samples <- ggmap(map_transparent) + 
+  theme(panel.grid = element_blank(), 
+        panel.background = element_rect(fill = 'white')) +
+  
+  # Plot points with different colors and shapes
+  geom_point(data = sites, 
+             aes(x = lon_decimal, y = lat_decimal, color = density, shape = density), 
+             size = 3) +  
+  
+  # Apply color and shape mapping
+  scale_color_manual(values = density_colors) +
+  scale_shape_manual(values = density_shapes) +
+  
+  # Add site labels
+  geom_text(data = sites,
+            aes(x = lon_decimal, y = lat_decimal, label = site),
+            size = 3, fontface = "bold", color = "black",
+            hjust = -0.06, vjust = -0.03) +
+  
+  # Add north arrow (ensure CRS is defined)
+  annotation_north_arrow(location = "topleft", 
+                         which_north = "true", 
+                         style = north_arrow_fancy_orienteering) +
+
+  # Convert to coord_sf() for ggspatial to work
+  coord_sf(crs = 4326) +  # Ensure CRS is explicitly set for proper projection
+  
+  # Add scale bar
+  annotation_scale(location = "bottomright",  # Adjust position as needed
+                   bar_cols = c("black", "white"),
+                   line_width = 1) +
+  
+  # Axis labels and formatting
+  ylab("Latitude") + xlab("Longitude") + 
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        axis.text = element_text(size = 10))   
+
+# Display the map
+map.for.samples
+
+```
+

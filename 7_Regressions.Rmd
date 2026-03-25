@@ -1,0 +1,451 @@
+---
+title: "Regressions"
+author: "Tessa Rehill"
+date: "2025-01-19"
+output: html_document
+---
+
+Run linear regressions on response variables (urchin density, kelp survival, kelp growth) to environmental and other predictors.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(gridExtra)
+library(GGally)
+```
+
+
+#Read in data 
+```{r}
+data <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_data.csv")
+
+```
+
+#Supplemental Pairwise Correlation Plot (ENV variables)
+```{r}
+
+#variables of interest (ONLY env variables) - mean_temperature_c, mean_light_lux, bottom_do, bottom_salinity, bottom_ph, mean_depth_m, max_temperature_c, max_current, mean_current
+
+#select only the environmental variables
+env_data <- data %>%
+  dplyr::select(mean_temperature_c, mean_light_lux, bottom_do, bottom_salinity, 
+         bottom_ph, mean_depth_m, max_temperature_c, max_current, mean_current) %>%
+  rename(
+    `temp (mean)` = mean_temperature_c,
+    `temp (max)` = max_temperature_c,
+    `light (lux)` = mean_light_lux,
+    `bottom DO` = bottom_do,
+    `bottom pH` = bottom_ph,
+    `bottom salinity` = bottom_salinity,
+    `depth (mean)` = mean_depth_m,
+    `current (max)` = max_current,
+    `current (mean)` = mean_current
+  )
+
+
+#define a custom function for the lower panel with red trend lines
+custom_smooth <- function(data, mapping, ...) {
+  ggplot(data, mapping) +
+    geom_point(alpha = 0.6) +  # Keeps points semi-transparent
+    geom_smooth(method = "lm", color = "red", size = 0.5, se = FALSE)  # Red, thin regression line
+}
+
+#create the scatterplot matrix
+p <- ggpairs(env_data, 
+             lower = list(continuous = custom_smooth)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(angle = 45, hjust = 1))  # Rotate y-axis labels
+p
+
+# Save the plot as a PNG file
+ggsave("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/environmental_supps/environmental_scatterplot_matrix.png", plot = p, width = 10, height = 10, dpi = 300)
+
+
+```
+
+#Regressions - Growth
+```{r}
+
+#temperature 
+ggplot(data, aes(x = mean_temperature_c, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Mean Temperature",
+    x = "Mean Temperature (°C)",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+
+#site density 
+ggplot(data, aes(x = urchin_site_density, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Urchin Density ",
+    x = "Urchin Density",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+#pH
+ggplot(data, aes(x = bottom_ph, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and pH",
+    x = "pH",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+#DO
+ggplot(data, aes(x = bottom_do, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and DO",
+    x = "DO",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+
+#salinity
+ggplot(data, aes(x = bottom_salinity, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Salinity",
+    x = "Bottom salinity",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+#co-occuring algae
+ggplot(data, aes(x = percent_occuring_algae, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Algae",
+    x = "Co-occuring Algae (%)",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+#grazer density
+ggplot(data, aes(x = grazer_density, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Grazer Density",
+    x = "Grazer Density",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+#urchin density
+ggplot(data, aes(x = urchin_density, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationship Between Kelp Growth and Urchin Density",
+    x = "Urchin Density",
+    y = "Log - Kelp Growth (mm)"
+  ) +
+  theme_minimal()
+
+
+```
+
+#Kelp Growth
+```{r}
+
+#reshape the data to a long format
+long_data <- data %>%
+  pivot_longer(
+    cols = c(mean_temperature_c, urchin_site_density, bottom_ph, bottom_do, 
+             bottom_salinity, percent_occuring_algae, grazer_density, urchin_density, mean_light_lux, grazers_site_density, mean_current, max_temperature_c),
+    names_to = "variable",
+    values_to = "value"
+  )
+
+#create the faceted plot
+ggplot(long_data, aes(x = value, y = kelp_growth)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationships Between Kelp Growth and Environmental Variables",
+    x = "Environmental Variable",
+    y = "Kelp Growth (mm)"
+  ) +
+  theme_minimal() +
+  facet_wrap(~variable, scales = "free_x", ncol = 3)  # Facet by variable, adjust columns as needed
+
+```
+
+#Kelp survival 
+```{r}
+data <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_data.csv")
+
+#reshape the data to a long format
+long_data <- data %>%
+  pivot_longer(
+    cols = c(mean_temperature_c, urchin_site_density, bottom_ph, bottom_do, 
+             bottom_salinity, percent_occuring_algae, grazer_density, urchin_density, mean_light_lux),
+    names_to = "variable",
+    values_to = "value"
+  )
+
+#create the faceted plot
+ggplot(long_data, aes(x = value, y = kelp_survival)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationships Between Kelp Survival and Environmental Variables",
+    x = "Environmental Variable",
+    y = "Survival (%)"
+  ) +
+  theme_minimal() +
+  facet_wrap(~variable, scales = "free_x", ncol = 3)  # Facet by variable, adjust columns as needed
+```
+
+#Urchin density 
+```{r}
+#reshape the data to a long format
+long_data <- data %>%
+  pivot_longer(
+    cols = c(mean_temperature_c, bottom_ph, bottom_do, 
+             bottom_salinity, percent_occuring_algae, grazer_density,  mean_light_lux),
+    names_to = "variable",
+    values_to = "value"
+  )
+
+#create the faceted plot
+ggplot(long_data, aes(x = value, y = urchin_density)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Points
+  geom_smooth(method = "lm", color = "red", linetype = "dashed") +  # Linear regression line
+  labs(
+    title = "Relationships Between Urchin Densities and Environmental Variables",
+    x = "Environmental Variable",
+    y = "Urchin Density"
+  ) +
+  theme_minimal() +
+  facet_wrap(~variable, scales = "free_x", ncol = 3)  # Facet by variable, adjust columns as needed
+```
+
+#distinguishing between open + caged 
+```{r}
+data <- data %>%
+  dplyr::select(
+    percent_occuring_algae, kelp_survival, urchin_density, kelp_growth,
+    mean_temperature_c, mean_light_lux, bottom_temp, bottom_do,
+    bottom_salinity, bottom_ph, mean_depth_m, urchin_site_density,
+    species_richness, shannon_div, simp_div, grazer_density, site, month, treatment
+  ) 
+
+# Filter data for caged and open treatments
+caged_data <- data %>% 
+  filter(treatment == "caged") %>%
+  group_by(site, month) %>%
+  summarise(across(
+    c(percent_occuring_algae:grazer_density), 
+    \(x) mean(x, na.rm = TRUE)  # Updated to use an anonymous function
+  ), .groups = "drop")
+
+open_data <- data %>% 
+  filter(treatment == "open") %>%
+  group_by(site, month) %>%
+  summarise(across(
+    c(percent_occuring_algae:grazer_density), 
+    \(x) mean(x, na.rm = TRUE)
+  ), .groups = "drop")
+
+
+```
+
+#run regressions 
+```{r}
+
+# Define the response variables to analyze
+response_vars <- c("kelp_survival", "kelp_growth", "urchin_density")
+
+#reshape data for plotting (CAGED treatment example)
+caged_long <- caged_data %>%
+  pivot_longer(cols = all_of(response_vars), 
+               names_to = "response_variable", 
+               values_to = "value")
+
+open_long <- open_data %>%
+  pivot_longer(cols = all_of(response_vars), 
+               names_to = "response_variable", 
+               values_to = "value")
+
+# Create regression plots with facets
+
+#TEMPERATURE ################################################################
+plot1 <- ggplot(caged_long, aes(x = mean_temperature_c, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Mean Temperature (°C)", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Temperature") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = mean_temperature_c, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Mean Temperature (°C)", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Temperature") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#pH ####################################################################
+plot1 <- ggplot(caged_long, aes(x = bottom_ph, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Bottom pH", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs pH") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = bottom_ph, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Bottom pH", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs pH") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#Grazer density ######################################################
+plot1 <- ggplot(caged_long, aes(x = grazer_density, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Grazer Density (m^2)", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Grazer Density") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = grazer_density, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Grazer Density (m^2)", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Grazer Density") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#Algae Comp.  ######################################################
+plot1 <- ggplot(caged_long, aes(x = percent_occuring_algae, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Occuring Algae (%)", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Occuring Algae (%)") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = percent_occuring_algae, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Occuring Algae (%)", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Occuring Algae (%)") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+
+#DO 
+plot1 <- ggplot(caged_long, aes(x = bottom_do, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "DO", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs DO") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = bottom_do, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "DO", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs DO") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#Salinity 
+plot1 <- ggplot(caged_long, aes(x = bottom_salinity, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Salinity", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Salinity") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = bottom_salinity, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Salinity", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Salinity") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#Light Lux 
+plot1 <- ggplot(caged_long, aes(x = mean_light_lux, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Mean Light Lux", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Mean Light Lux") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = mean_light_lux, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Mean Light Lux", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Mean Light Lux") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+#Site density 
+plot1 <- ggplot(caged_long, aes(x = urchin_site_density, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Site Density", y = "Response Value", 
+       title = "Caged Plots - Linear Regression of Response Variables vs Site Density") +
+  theme_minimal()
+
+plot2 <- ggplot(open_long, aes(x = urchin_site_density, y = value)) + 
+  geom_point(alpha = 0.6) +  # Add scatter plot
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Linear regression line
+  facet_wrap(~response_variable, scales = "free_y") +  # Facet by response variable
+  labs(x = "Site Density", y = "Response Value", 
+       title = "Open Plots - Linear Regression of Response Variables vs Site Density") +
+  theme_minimal()
+
+grid.arrange(plot1, plot2, nrow = 2)
+
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,225 @@
+---
+title: "PCA"
+author: "Tessa Rehill"
+date: "2024-12-12"
+output: html_document
+---
+
+#notes 
+  - need to make PCA predictors ALL the same (including non-numeric predictor -> factors -> numeric), include ALLLLL 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#load libraries 
+```{r}
+
+library(dplyr)
+library(vegan)
+library(tidyr)
+
+```
+
+#load data 
+```{r}
+
+data <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_data.csv")
+sites <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/raw_data/metadata/site_coordinates.csv")
+
+data <- merge(data, sites, by = "site", all.x = TRUE) #merge site data with data 
+data$density <- as.factor(data$density)
+
+
+```
+
+
+#RUN PCA w/ site 
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(ggplot2)
+
+# Prepare the data: Remove rows with NA values in both the numeric columns and site
+data_clean <- data %>%
+  select(kelp_survival, kelp_growth, urchin_density, mean_temperature_c, 
+         mean_light_lux, bottom_temp, bottom_do, bottom_salinity, 
+         bottom_ph, mean_depth_m, site_density, species_richness, 
+         shannon_div, simp_div, site) %>%
+  drop_na()  # Drop rows with NA values in any of the selected columns
+
+# Perform PCA
+pca <- prcomp(data_clean %>% select(-site), scale. = TRUE)  # Remove 'site' column for PCA
+
+# Create a data frame with PCA scores and the 'site' variable
+pca_scores <- as.data.frame(pca$x)
+pca_scores$site <- data_clean$site  # Add 'site' from cleaned data
+
+# Plot PCA with sites as colors
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = as.factor(site))) +
+  geom_point(size = 3) +
+  labs(title = "PCA - Grouped by Site", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal() +
+  scale_color_discrete(name = "Site")
+
+# Plot PCA with urchin density (low, med, high)
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = as.factor(site))) +
+  geom_point(size = 3) +
+  labs(title = "PCA - Grouped by Site", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal() +
+  scale_color_discrete(name = "Site")
+```
+Group by treatment 
+```{r}
+
+library(tidyverse)
+library(ggplot2)
+
+# Prepare the data: Remove rows with NA values in both the numeric columns and site
+data_clean <- data %>%
+  select(kelp_survival, kelp_growth, urchin_density, mean_temperature_c, 
+         mean_light_lux, bottom_temp, bottom_do, bottom_salinity, 
+         bottom_ph, mean_depth_m, site_density, species_richness, 
+         shannon_div, simp_div, treatment) %>%
+  drop_na()  # Drop rows with NA values in any of the selected columns
+
+# Perform PCA
+pca <- prcomp(data_clean %>% select(-treatment), scale. = TRUE)  # Remove 'site' column for PCA
+
+# Create a data frame with PCA scores and the 'site' variable
+pca_scores <- as.data.frame(pca$x)
+pca_scores$treatment <- data_clean$treatment  # Add 'site' from cleaned data
+
+# Plot PCA with sites as colors
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = as.factor(treatment))) +
+  geom_point(size = 3) +
+  labs(title = "PCA - Grouped by Treatment", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal() +
+  scale_color_discrete(name = "Treatment")
+
+
+
+```
+
+Group by density 
+```{r}
+
+library(tidyverse)
+library(ggplot2)
+
+# Prepare the data: Remove rows with NA values in both the numeric columns and site
+data$site <- as.factor(data$site)
+data$site <- as.numeric(data$site)
+
+data_clean <- data %>%
+  select(kelp_survival, site, kelp_growth,  mean_temperature_c, 
+         mean_light_lux,  bottom_do, bottom_salinity, 
+         bottom_ph, mean_depth_m,  species_richness, 
+         shannon_div, simp_div, density) %>%
+  drop_na()  # Drop rows with NA values in any of the selected columns
+
+# Perform PCA
+pca <- prcomp(data_clean %>% select(-density), scale. = TRUE)  # Remove 'density' column for PCA
+
+# Create a data frame with PCA scores and the 'site' variable
+pca_scores <- as.data.frame(pca$x)
+pca_scores$density <- data_clean$density  
+
+# Plot PCA with sites as colors
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = as.factor(density))) +
+  geom_point(size = 3) +
+  labs(title = "PCA - Grouped by Density", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal() +
+  scale_color_discrete(name = "Density")
+
+#NEED TO FIGURE OUT WHY GREEN IS SO GROUPED ON ONE SIDE - 
+```
+#PCA
+
+
+#THE GRAVEYARD
+#create species richness and diversity indices for transect data
+```{r}
+data <- dens
+# Assuming your dataframe is named 'data'
+div_data <- data %>%
+  rowwise() %>%
+  mutate(
+    # Combine species counts into a vector
+    species_counts = list(c(total_n_ab, total_n_ru, total_n_gu, total_n_pu, 
+                            total_n_sn, total_n_pyc, total_n_cuc)),
+    # Calculate Species Richness
+    species_richness = sum(species_counts > 0, na.rm = TRUE),
+    # Shannon Diversity Index
+    shannon_div = diversity(species_counts, index = "shannon"),
+    # Simpson Diversity Index
+    simp_div = diversity(species_counts, index = "simpson")
+  ) %>%
+  ungroup()
+
+#rename urchin density to site density 
+div_data <- div_data %>%
+  rename(site_density = urchin_density)
+
+
+
+```
+
+#format env data
+```{r}
+#create env summary, for bottom temperature, do, ph, salinity
+bottom_data <- env %>%
+ group_by(site, month) %>%
+  summarize(
+    bottom_temp = temp[which.max(depth_m)],
+    bottom_do = do[which.max(depth_m)],
+    bottom_salinity = salinity[which.max(depth_m)],
+    bottom_ph = ph[which.max(depth_m)],
+    .groups = "drop" # Ungroups after summarization
+  )
+
+#make month a character
+bottom_data <- bottom_data %>%
+  mutate(month = as.character(month))
+```
+
+#Merge dataframe 
+```{r}
+# Merge hobo with plots
+plots <- plots %>%
+  left_join(hobo, by = c("site", "month"))
+
+# Merge bottom_data with plots
+plots <- plots %>%
+  left_join(bottom_data, by = c("site", "month"))
+
+# Merge div_data with plots
+plots <- plots %>%
+  left_join(div_data, by = c("site", "month"))
+
+data <- plots
+
+#select columns 
+data <- data %>%
+  select(site, plot_id, date, percent_occuring_algae, month, treatment, 
+         gravel_size, plot, kelp_survival, urchin_density, kelp_growth, 
+         mean_temperature_c, mean_light_lux, bottom_temp, bottom_do, 
+         bottom_salinity, bottom_ph, mean_depth_m, site_density, 
+         species_richness, shannon_div, simp_div)
+
+write.csv(data, "/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/data.csv", row.names = FALSE)
+
+env_data <- data %>%
+  select(site,  date,  month, 
+         mean_temperature_c, mean_light_lux, bottom_temp, bottom_do, 
+         bottom_salinity, bottom_ph, mean_depth_m,  
+         species_richness, shannon_div, simp_div)
+
+#make numeric
+data <- env_data %>%
+  mutate(across(c(site, plot_id, date, month, treatment, gravel_size, plot), 
+                ~ as.numeric(as.factor(.))))
+
+summary(data)
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,289 @@
+---
+title: "6_Urchin_GLMM"
+author: "Tessa Rehill"
+date: "2025-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load libraries 
+
+```{r}
+library(here)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggcorrplot)
+library(corrplot)
+library(car)
+library(glmmTMB)
+library(DHARMa)
+library(caret)
+library(GGally)
+library(broom.mixed)
+library(dotwhisker)
+library(ggplot2)
+library(broom)
+library(lme4)
+library(lmerTest)
+```
+
+#Load data 
+```{r}
+data <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_data.csv")
+
+```
+
+#Standardize and scale predictors 
+```{r}
+#standardizing predictors
+data$mean_temperature_c <- scale(data$mean_temperature_c)
+data$max_temperature_c <- scale(data$max_temperature_c)
+data$mean_light_lux <- scale(data$mean_light_lux)
+data$bottom_do <- scale(data$bottom_do)
+data$bottom_salinity <- scale(data$bottom_salinity)
+data$urchin_site_density <- scale(data$urchin_site_density)
+data$mean_current <- scale(data$mean_current)
+data$ts_density <- scale(data$ts_density)
+data$ts_site_density <- scale(data$ts_site_density)
+```
+
+
+#Global model
+```{r}
+#starting with a minimal model (only random effects)
+base_model <- glmmTMB(urchin_density ~ treatment*urchin_site_density  + (1 | site), 
+                      family = tweedie(link = "log"), 
+                      data = data)
+
+predictor_list <- c( "mean_temperature_c", "max_temperature_c", "mean_current", "bottom_do", "bottom_salinity", "month")
+
+
+```
+
+#AIC selection
+```{r}
+#initialize variables
+selected_predictors <- c()
+current_model <- base_model
+current_aic <- AIC(base_model)
+converged <- FALSE
+
+#stepwise selection loop
+while (!converged) {
+  converged <- TRUE
+  
+  # Forward selection
+  for (predictor in setdiff(predictor_list, selected_predictors)) {
+    formula <- as.formula(
+      paste("urchin_density ~ treatment*urchin_site_density +", 
+            paste(c(selected_predictors, predictor), collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- c(selected_predictors, predictor)
+      converged <- FALSE
+    }
+  }
+  
+  # Backward elimination
+  for (predictor in selected_predictors) {
+    remaining_predictors <- setdiff(selected_predictors, predictor)
+    formula <- as.formula(
+      paste("urchin_density ~ treatment*urchin_site_density +", 
+            paste(remaining_predictors, collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- remaining_predictors
+      converged <- FALSE
+    }
+  }
+}
+
+#print results
+print(selected_predictors)
+summary(current_model)
+
+```
+
+
+```{r}
+lm_model <- lm(urchin_density~ treatment + urchin_site_density + mean_temperature_c  + mean_current + bottom_do, data = data)
+
+vif(lm_model) #all below 5
+```
+
+
+```{r}
+#final model
+fittedModel <- current_model
+
+testDispersion(fittedModel) #check for overdispersion
+
+simulationOutput <- simulateResiduals(fittedModel = fittedModel, plot = T)
+simulationOutput
+
+#save the testDispersion plot
+png("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/models/ploturchin_testDispersion_plot.png", width = 800, height = 600)
+testDispersion(fittedModel)
+dev.off()
+
+#save the QQ plot
+png("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/models/ploturchin_QQ_plot.png", width = 800, height = 600)
+plotQQunif(simulationOutput)  # Generate QQ plot
+dev.off()
+
+#save residual vs predictor plot
+png("/Users/tessarehill/Dropbox/MSc/Exclosures/plots/models/ploturchin_residuals_vs_predictor.png", width = 800, height = 600)
+plotResiduals(simulationOutput)
+dev.off()
+```
+#Try with turban snail densities 
+#Global model
+```{r}
+#starting with a minimal model (only random effects)
+base_model <- glmmTMB(ts_density ~ treatment*ts_site_density  + (1 | site), 
+                      family = tweedie(link = "log"), 
+                      data = data)
+
+predictor_list <- c( "mean_temperature_c", "max_temperature_c", "mean_current", "bottom_do", "bottom_salinity", "month")
+
+
+```
+
+#AIC selection
+```{r}
+#initialize variables
+selected_predictors <- c()
+current_model <- base_model
+current_aic <- AIC(base_model)
+converged <- FALSE
+
+#stepwise selection loop
+while (!converged) {
+  converged <- TRUE
+  
+  # Forward selection
+  for (predictor in setdiff(predictor_list, selected_predictors)) {
+    formula <- as.formula(
+      paste("ts_density ~ treatment*ts_site_density +", 
+            paste(c(selected_predictors, predictor), collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- c(selected_predictors, predictor)
+      converged <- FALSE
+    }
+  }
+  
+  # Backward elimination
+  for (predictor in selected_predictors) {
+    remaining_predictors <- setdiff(selected_predictors, predictor)
+    formula <- as.formula(
+      paste("ts_density ~ treatment*ts_site_density +", 
+            paste(remaining_predictors, collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- remaining_predictors
+      converged <- FALSE
+    }
+  }
+}
+
+#print results
+print(selected_predictors)
+summary(current_model)
+
+```
+#Global model
+```{r}
+#starting with a minimal model (only random effects)
+base_model <- glmmTMB(ts_density ~ treatment  + (1 | site), 
+                      family = tweedie(link = "log"), 
+                      data = data)
+
+predictor_list <- c( "mean_temperature_c", "max_temperature_c", "mean_current", "bottom_do", "bottom_salinity", "month")
+
+
+```
+
+#AIC selection
+```{r}
+#initialize variables
+selected_predictors <- c()
+current_model <- base_model
+current_aic <- AIC(base_model)
+converged <- FALSE
+
+#stepwise selection loop
+while (!converged) {
+  converged <- TRUE
+  
+  # Forward selection
+  for (predictor in setdiff(predictor_list, selected_predictors)) {
+    formula <- as.formula(
+      paste("ts_density ~ treatment +", 
+            paste(c(selected_predictors, predictor), collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- c(selected_predictors, predictor)
+      converged <- FALSE
+    }
+  }
+  
+  # Backward elimination
+  for (predictor in selected_predictors) {
+    remaining_predictors <- setdiff(selected_predictors, predictor)
+    formula <- as.formula(
+      paste("ts_density ~ treatment +", 
+            paste(remaining_predictors, collapse = " + "), 
+            "+ (1 | site)")
+    )
+    new_model <- glmmTMB(formula, family = tweedie(link = "log"), data = data)
+    new_aic <- AIC(new_model)
+    
+    if (new_aic < current_aic) {
+      current_model <- new_model
+      current_aic <- new_aic
+      selected_predictors <- remaining_predictors
+      converged <- FALSE
+    }
+  }
+}
+
+#print results
+print(selected_predictors)
+summary(current_model)
+
+```

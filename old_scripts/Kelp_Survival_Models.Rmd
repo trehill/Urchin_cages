@@ -1,0 +1,696 @@
+---
+title: "Kelp_Models"
+author: "Tessa Rehill"
+date: "2024-12-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load libraries 
+```{r}
+library(here)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(car)
+library(glmmTMB)
+library(DHARMa)
+library(caret)
+
+```
+
+#Read in files 
+```{r}
+transects <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_monitoring_transects.csv")
+
+plots <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_green_gravel_monitoring.csv")
+
+env <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/cleaned_ysi_measurement.csv")
+
+hobo <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/ENV/HOBO/summary_hobo.csv")
+
+dens <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/density_urchin_transects.csv")
+```
+
+
+#Add site density to plots dataframe (to be used as a predictor in our models)
+#And environmental variables (from hobo and env)
+```{r}
+#change column name urchin_density in dens to site_density
+dens <- dens %>% rename(site_density = urchin_density) #describes urchin density at the site from transects 
+
+#merge dens into plots by site and month
+plots_glm <- merge(plots, dens[, c("site", "month", "mean_depth_m", "site_density")], 
+               by = c("site", "month"), 
+               all.x = TRUE)
+
+#create env summary, for bottom temperature, do, ph, salinity
+bottom_data <- env %>%
+ group_by(site, month) %>%
+  summarize(
+    bottom_temp = temp[which.max(depth_m)],
+    bottom_do = do[which.max(depth_m)],
+    bottom_salinity = salinity[which.max(depth_m)],
+    bottom_ph = ph[which.max(depth_m)],
+    .groups = "drop" # Ungroups after summarization
+  )
+
+#make month a character
+bottom_data <- bottom_data %>%
+  mutate(month = as.character(month))
+
+#merge environmental data and depth data by site/month to plot data 
+plots_glm <- plots_glm %>%
+  left_join(hobo, by = c("site", "month")) %>%
+  left_join(bottom_data, by = c("site", "month"))
+
+#select columns of interest for our models 
+selected_columns <- c("site", "month", "plot_id", "date", "treatment", "gravel_size", "kelp_survival", "urchin_density", "kelp_growth", "mean_depth_m", "site_density", "mean_temperature_c", "mean_light_lux", "bottom_do", "bottom_salinity", "percent_occuring_algae")
+
+model_df <- plots_glm[, selected_columns]
+
+```
+
+#Zero-inflated generalized linear mixed-effects models - SURVIVAL
+  #zeros are due to natural processes 
+```{r}
+summary(model_df)
+
+model_df$log_kelp_growth <- log(model_df$kelp_growth + 1)
+
+#change month to integer 
+  #convert 'month' to a factor
+    model_df$month <- as.factor(model_df$month)
+
+  #convert the factor levels to numeric
+    model_df$month <- as.numeric(model_df$month)
+    
+#change plot ID to an integer 
+      #convert 'month' to a factor
+    model_df$plot_id <- as.factor(model_df$plot_id)
+
+  #convert the factor levels to numeric
+    model_df$plot_id <- as.numeric(model_df$plot_id)
+    
+#CHECK CORRELATION OF ALL PREDICTORS ############################################
+cor_matrix <- cor(model_df[, c("mean_light_lux", "mean_temperature_c", "bottom_salinity", "mean_depth_m", "month","bottom_do", "urchin_density", "percent_occuring_algae", "site_density", "urchin_density", "plot_id")],  use = "complete.obs")
+
+corrplot(cor_matrix, method = "circle")
+
+
+#CHECK ENVIRONMENTAL PREDICTORS #################################################
+#correlation matrix of predictors 
+cor_matrix <- cor(model_df[, c("mean_light_lux", "mean_temperature_c", "bottom_salinity", "mean_depth_m", "month","bottom_do", "urchin_density", "percent_occuring_algae", "site_density", "urchin_density")],  use = "complete.obs")
+
+print(cor_matrix)
+
+corrplot(cor_matrix, method = "circle")
+
+#check VIF factor 
+lm_model <- lm(kelp_survival ~ mean_light_lux + percent_occuring_algae + 
+               mean_temperature_c + bottom_salinity + mean_depth_m + 
+               bottom_do + month + urchin_density + site_density + plot_id, data = model_df)
+
+vif(lm_model) #salinity, bottom_do, mean_temp, is too high 
+
+#remove salinity as a predictor variable 
+lm_model <- lm(kelp_survival ~ mean_light_lux + percent_occuring_algae + mean_temperature_c + month + mean_depth_m + bottom_do + month + urchin_density + site_density, data = model_df)
+
+vif(lm_model) #all below 5 
+
+#standardizing predictors
+model_df$mean_temperature_c <- scale(model_df$mean_temperature_c)
+model_df$bottom_do <- scale(model_df$bottom_do)
+model_df$mean_light_lux <- scale(model_df$mean_light_lux)
+model_df$mean_depth_m <- scale(model_df$mean_depth_m)
+model_df$urchin_density <- scale(model_df$urchin_density)
+model_df$site_density <- scale(model_df$site_density)
+
+#month needs to be turned back into a factor
+model_df$month <- factor(model_df$month)
+model_df$treatment <- as.factor(model_df$treatment)
+model_df$gravel_size <- as.factor(model_df$gravel_size)
+
+```
+
+
+#Models - kelp survival 
+  #kelp survival represented as a DISCRETE variable, calculated using count data (number        of kelps)
+    #use poisson distribution
+
+#Generalized Linear Model - Zero Inflation - Poisson 
+```{r}
+#for the first model, include all predictors 
+#turn kelp survival into a integer 
+model_df$kelp_survival <- as.integer(model_df$kelp_survival)
+
+#base model (everything included)
+model1 <- glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model1)
+AIC(model1) #1380
+
+
+#checking random effects 
+model2 <- glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux + month +
+                       urchin_density + site_density + (1 | site),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model2)
+AIC(model2) #1459 - we should include plot_id
+
+
+
+#checking fixed effects: treatment, month, gravel_size, mean temp, mean depth, bottom do, light lux, 
+#urchin site densities, urchin plot densities 
+
+#no month 
+model3 <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux +
+                       urchin_density + site_density + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+summary(model3)
+AIC(model3) #1436, worse than base model with no month, keep month 
+
+#no site density 
+model4 <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux +
+                       urchin_density  + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+summary(model4)
+AIC(model4) #1440, worse, remove site density 
+
+#no urchin either density
+model5 <-   glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux +
+                       + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model5)
+AIC(model5) #1405, lowest so far - but we WANT to test for urchin densities (so keep?)
+
+#remove light lux 
+model6 <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + bottom_do + 
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+
+summary(model6)
+AIC(model6) #1369.385  #best so far 
+
+#remove bottom do
+model7 <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + mean_depth_m + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+summary(model7)
+AIC(model7) #1361
+
+#remove depth
+model8 <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + bottom_do + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model8)
+AIC(model8) #1425, worse, remove depth 
+
+#remove temp
+model9 <-   glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_depth_m + bottom_do + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model9)
+AIC(model9) #1399 - winner as of now! 
+
+#remove gravel_size 
+model10 <- glmmTMB(kelp_survival ~ treatment +
+                       mean_temperature_c + mean_depth_m + bottom_do + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model10)
+AIC(model10) #1375 - even better??
+
+#no ENV variables involed 
+model11 <- glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(model11)
+AIC(model11) #1480 #not better
+
+
+
+AIC <- AIC(model1, model2, model3, model4, model5, model6, model7, model8, model9, model10, model11)
+
+#lowest AIC models WITH valid model (based on CV)
+  #model 8 - AIC 1425
+
+
+#FINAL MODEL BASED ON LOWEST AIC AND MODEL CV 
+final  <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       mean_temperature_c + bottom_do + mean_light_lux +
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+
+summary(final)
+AIC(final) #1425
+
+final_simple <-  glmmTMB(kelp_survival ~ treatment + gravel_size + 
+                       urchin_density + site_density + month + (1 | site) + (1 | plot_id),
+                       ziformula = ~ 1,
+                       family = poisson(), 
+                       data = model_df)
+ 
+summary(final_simple)
+AIC(final_simple) #1490
+
+```
+
+#Zero Inflated Negative Binomial GLMM 
+```{r}
+#include ALL predictors in first model 
+model1 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) + (1 | plot_id) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model1)
+AIC(model1) #943
+
+#check rnadom effects 
+model2 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model2)
+AIC(model2) #941 - remove plot_id
+
+model3 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) + (1 | month) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model3)
+AIC(model3) #942 - month stays as fixed effect 
+
+#change combinations of fixed effects 
+model4 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model4)
+AIC(model4) #943 - month stays 
+
+model5 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density  + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density  + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model5)
+AIC(model5) #943 - do stays 
+
+model6 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density  + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux  + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model6)
+AIC(model6) #939 - urchin density makes a better model, but its something we're interested in
+
+model7 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c  + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model7)
+AIC(model7) #940 - site density stays 
+
+model8 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux  + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment  + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model8)
+AIC(model8) #941 - temperature stays
+
+model9 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                       urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model9)
+AIC(model9) #928 - light removed? 
+
+model10 <- glmmTMB(kelp_survival ~ treatment + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density  + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model10)
+AIC(model10) #941 - gravel size stays 
+
+model11 <- glmmTMB(kelp_survival ~  + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~  + mean_temperature_c + site_density  + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model11)
+AIC(model11) #941 - treatment stays 
+
+#Remove light lux and urchin density 
+model12 <- glmmTMB(kelp_survival ~ treatment + gravel_size  + mean_temperature_c + site_density  + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+summary(model12)
+AIC(model12) #935- lowest AIC 
+
+#Testing ONLY things we are testing (irrelevant of environment)
+
+model13 <- glmmTMB(kelp_survival ~ treatment + gravel_size + site_density + urchin_density + month + (1 | site),
+                  zi = ~ treatment + site_density + gravel_size + month,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(model13)
+AIC(model13) #937 - remove plot_id
+
+AIC <- AIC(model1, model2, model3, model4, model5, model6, model7, model8, model9, model10, model11, model12, model13)
+AIC
+
+
+#I want to CV test 
+  #model 13
+  #model 2
+
+final2 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  (1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(final2)
+  
+simple_final2 <- glmmTMB(kelp_survival ~ treatment + gravel_size + site_density + urchin_density + month + (1 | site),
+                  zi = ~ treatment + site_density + gravel_size + month,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(simple_final2)
+
+```
+
+#Validation of models
+
+#using DHARMA 
+```{r}
+library(DHARMa)
+
+#final model - poisson
+fittedModel <- final
+
+testDispersion(fittedModel) #check for overdispersion
+
+simulationOutput <- simulateResiduals(fittedModel = fittedModel, plot = T)
+simulationOutput
+
+#simple final model - poisson
+fittedModel <- simple_final2
+
+testDispersion(fittedModel) #check for overdispersion
+
+simulationOutput <- simulateResiduals(fittedModel = fittedModel, plot = T)
+simulationOutput
+
+#Negative binomial 
+fittedModel <- final2
+
+testDispersion(fittedModel) #check for overdispersion
+
+simulationOutput <- simulateResiduals(fittedModel = fittedModel, plot = T)
+simulationOutput
+
+
+fittedModel <- simple_final2
+
+testDispersion(fittedModel) #check for overdispersion
+
+simulationOutput <- simulateResiduals(fittedModel = fittedModel, plot = T)
+simulationOutput
+
+
+
+```
+
+#Other model parameters
+```{r}
+# Load necessary libraries
+library(DHARMa)
+library(caret)
+
+
+# 1. Residual Diagnostics for both models
+# Residuals vs Fitted plot for final model (Poisson)
+plot(fitted(final), residuals(final), main = "Residuals vs Fitted (final)", 
+     xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+
+
+# Residuals vs Fitted plot for final2 model (Negative Binomial)
+plot(fitted(final2), residuals(final2), main = "Residuals vs Fitted (final2)", 
+     xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+
+# 2. Zero-Inflation Check
+# Predicted probabilities of zero inflation for the final model
+pred_zeros_final <- predict(final, type = "response", se.fit = TRUE)
+plot(pred_zeros_final$fit, type = "l", main = "Predicted Zero Probabilities (final)", 
+     xlab = "Observation", ylab = "Predicted Probability of Zero")
+
+# Predicted probabilities of zero inflation for the final2 model
+pred_zeros_final2 <- predict(final2, type = "response", se.fit = TRUE)
+plot(pred_zeros_final2$fit, type = "l", main = "Predicted Zero Probabilities (final2)", 
+     xlab = "Observation", ylab = "Predicted Probability of Zero")
+
+# 3. Model Comparison (AIC)
+cat("AIC for final model (Poisson):", AIC(final), "\n")
+cat("AIC for final2 model (Negative Binomial):", AIC(final2), "\n")
+
+# 4. Dispersion Check for Overdispersion
+# For final model (Poisson)
+simulationOutput_final <- simulateResiduals(fittedModel = final, plot = TRUE)
+testDispersion(simulationOutput_final)  # Check for overdispersion
+
+# For final2 model (Negative Binomial)
+simulationOutput_final2 <- simulateResiduals(fittedModel = final2, plot = TRUE)
+testDispersion(simulationOutput_final2)  # Check for overdispersion
+
+# 5. Check Convergence
+# Check model summaries to see if they converged properly
+summary(final)
+summary(final2)
+
+# 6. Fitted vs Observed Plot
+# Fitted vs. Observed plot for final model (Poisson)
+fitted_values_final <- fitted(final)
+plot(model_df$kelp_survival, fitted_values_final, 
+     main = "Observed vs Fitted (final)", xlab = "Observed", ylab = "Fitted")
+abline(a = 0, b = 1, col = "red")  # 45-degree line
+
+# Fitted vs. Observed plot for final2 model (Negative Binomial)
+fitted_values_final2 <- fitted(final2)
+plot(model_df$kelp_survival, fitted_values_final2, 
+     main = "Observed vs Fitted (final2)", xlab = "Observed", ylab = "Fitted")
+abline(a = 0, b = 1, col = "red")  # 45-degree line
+
+# 7. Cross-validation (optional)
+set.seed(123)
+
+# Split data into training and testing sets
+trainIndex <- createDataPartition(model_df$kelp_survival, p = 0.8, list = FALSE)
+trainData <- model_df[trainIndex, ]
+testData <- model_df[-trainIndex, ]
+
+# Train both models on training data
+model_final_train <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_temperature_c + 
+                            mean_depth_m + bottom_do + mean_light_lux + urchin_density + 
+                            site_density + month + (1 | site) + (1 | plot_id),
+                            ziformula = ~1, family = poisson(), data = trainData)
+
+model_final2_train <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_temperature_c + 
+                             mean_depth_m + bottom_do + mean_light_lux + urchin_density + 
+                             site_density + month + (1 | site) + (1 | plot_id),
+                             ziformula = ~1, family = nbinom2(), data = trainData)
+
+# Predict on test data
+predictions_final <- predict(model_final_train, newdata = testData)
+predictions_final2 <- predict(model_final2_train, newdata = testData)
+
+# Calculate RMSE (Root Mean Squared Error)
+RMSE_final <- sqrt(mean((predictions_final - testData$kelp_survival)^2))
+RMSE_final2 <- sqrt(mean((predictions_final2 - testData$kelp_survival)^2))
+
+cat("RMSE for final model (Poisson):", RMSE_final, "\n")
+cat("RMSE for final2 model (Negative Binomial):", RMSE_final2, "\n")
+
+# 8. Model Comparison (Likelihood Ratio Test)
+anova(final, final2)  # Compare models using likelihood ratio test
+
+
+fittedModel <- final2
+summary(fittedModel)
+AIC(fittedModel)
+simulated_residuals <- simulateResiduals(fittedModel)
+plotQQunif(simulated_residuals)
+plot(simulated_residuals)
+
+#ran this script comparing final2 and simple_final2 and was similar results 
+
+```
+
+
+#Final 2 is the best model 
+
+
+```{r}
+data <- read.csv("/Users/tessarehill/Dropbox/MSc/Exclosures/processed_data/data.csv")
+
+model_df <- data 
+
+#change month to integer 
+  #convert 'month' to a factor
+    model_df$month <- as.factor(model_df$month)
+
+  #convert the factor levels to numeric
+    model_df$month <- as.numeric(model_df$month)
+    
+#change plot ID to an integer 
+      #convert 'month' to a factor
+    model_df$plot_id <- as.factor(model_df$plot_id)
+
+  #convert the factor levels to numeric
+    model_df$plot_id <- as.numeric(model_df$plot_id)
+    
+
+
+#standardizing predictors
+model_df$mean_temperature_c <- scale(model_df$mean_temperature_c)
+model_df$bottom_do <- scale(model_df$bottom_do)
+model_df$mean_light_lux <- scale(model_df$mean_light_lux)
+model_df$mean_depth_m <- scale(model_df$mean_depth_m)
+model_df$urchin_density <- scale(model_df$urchin_density)
+model_df$site_density <- scale(model_df$site_density)
+model_df$shannon_div <- scale(model_df$shannon_div)
+model_df$simp_div <- scale(model_df$simp_div)
+model_df$species_richness <- scale(model_df$species_richness)
+
+#month needs to be turned back into a factor
+model_df$month <- factor(model_df$month)
+model_df$treatment <- as.factor(model_df$treatment)
+model_df$gravel_size <- as.factor(model_df$gravel_size)
+
+
+model_df$kelp_survival <- as.integer(model_df$kelp_survival)
+
+#shannon 
+model1 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  shannon_div +(1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month + shannon_div,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(model1)
+AIC(model1) #945
+
+#simp
+model2 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  simp_div +(1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month + simp_div,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(model2)
+AIC(model2) #935
+
+#richness
+model3 <- glmmTMB(kelp_survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + month +
+                  species_richness +(1 | site) ,
+                  zi = ~ treatment + mean_temperature_c + site_density + gravel_size + 
+                        mean_light_lux + urchin_density + bottom_do + month + species_richness,
+                  family = nbinom2, 
+                  data = model_df)
+
+summary(model3)
+AIC(model3) #943
+
+
+#
+
+#correlation matrix of predictors 
+cor_matrix <- cor(model_df[, c("mean_light_lux", "mean_temperature_c", "bottom_salinity", "mean_depth_m", "month","bottom_do", "urchin_density", "percent_occuring_algae", "site_density", "urchin_density", "simp_div")],  use = "complete.obs")
+
+print(cor_matrix)
+
+corrplot(cor_matrix, method = "circle")
+
+#check VIF factor 
+lm_model <- lm(kelp_survival ~ mean_light_lux + percent_occuring_algae + 
+               mean_temperature_c + mean_depth_m + bottom_do + month + urchin_density + site_density + plot_id + simp_div, 
+               data = model_df)
+
+vif(lm_model) #salinity, bottom_do, mean_temp, is too high 
+
+```
+

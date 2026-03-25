@@ -1,0 +1,251 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2820
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;\f1\fnil\fcharset0 Monaco;}
+{\colortbl;\red255\green255\blue255;\red185\green188\blue186;\red29\green38\blue42;}
+{\*\expandedcolortbl;;\cssrgb\c77255\c78431\c77647;\cssrgb\c14902\c19608\c21961;}
+\margl1440\margr1440\vieww12680\viewh14380\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 1_Processing_Environmental_Data.Rmd\
+Reads all raw datafiles (from HOBO) and knits them together into combined file for later processing \
+\
+	Inputs\
+	 - all HOBO logger files \
+\
+	Outputs\
+	 - combined_hobo.csv (all Hobo files combined)\
+\
+Notes: \
+- will add tilt meter data here (once issues are amended) \
+\
+2_QA_QC.Rmd \
+Cleaning raw urchin transect, kelp out planted plots and environmental data. Making certain variables numeric, fixing errors in data entry, create new more meaningful columns, renaming sites for alignment, removing leading/trailing zeros. For environmental data (HOBO), data was summarized based on conditions between monitoring periods. \
+Creates a combined cleaned dataset for analysis and modelling, includes diversity indices, bottom ENV data, \
+\
+Percent kelp = number gravel with kelp / number of gravel total x 100 \
+\
+Urchin density (for plots) - calculated per meter squared \
+	For open plots - urchin density = total number urchins / 1 \
+	For caged plots - urchin density = total number urchins / 4.5 \
+\
+Kelp_growth = summed growth per plot \
+	\
+	Inputs\
+	- urchin_monitoring_transects.csv  (raw data) \
+	- green_gravel_monitoring.csv (raw data) \
+	- YSI_measurement.csv (raw data) \
+	- combined_hobo.csv (output of previous script, processed data) \
+\
+	Outputs \
+	- cleaned_green_gravel_monitoring.csv (processed data) \
+	- cleaned_monitoring_transects.csv (processed_data) \
+	- cleaned_ysi_measurement.csv" (processed data) \
+	- summary_hobo.csv (processed data) \
+	- density_urchin_transects.csv (summary of urchin densities per transect)\
+	- cleaned_data.csv (combined data frame) \
+\
+Notes\
+- A lot of missing values in YSI data (due to sensor issues, weather contingencies) \
+- Will eventually need to add tilt current meter data \
+\
+3_Density_Analysis.Rmd\
+\
+This script provides the analysis for answering questions related to urchin densities. \
+	(1) What are the mean sea urchin densities across treatments? \
+	(2) Did urchin densities vary significantly across months? Across sites? \
+	(3) Were there significant differences in urchin densities between open and caged  \
+	      treatments? \
+	\
+\
+Determines the mean depths of sites, including the shallowest and deepest site. \
+Determines if urchin densities are statistically different from each other across sites. \
+Determine mean urchin densities by site \
+Visualizes urchin counts over transects \
+\
+	Inputs\
+		- cleaned_monitoring_transects.csv\
+		- cleaned_green_gravel_monitoring.csv\
+		- density_urchin_transects.csv\
+\
+	Outputs\
+		- densities_by_sp.png (stacked bar chart of sp by site)\
+		- bw_box_densities_by_site.png\
+		- densities_month_site_col.png\
+		- box_densities_by_site.png (urchin densities across sites)\
+		- baseline_densities.png (urchin densities by site for April) \
+		- densities_by_month.png \
+		- summary_transect_counts.png\
+		- box_treatment.png (box plot of open v caged treatment densities)\
+\
+4. Density_Models.Rmd \
+\
+	Perform GLMM on density data and predictors (Tweedie distribution) \
+		Random effect: plot_id, site \
+		Fixed effects (before stepwise selection): bottom salinity, bottom do, bottom ph, mean temperature, mean light lux, mean depth, treatment, % algae, month, site\
+		Stepwise predictor selection (based on AIC) \
+		Final best model : urchin_density ~ shannon_div + bottom_do + bottom_ph + mean_light_lux + mean_depth + treatment + percent_occuring_algae \
+						+ (1 | site) \
+\
+		Create plots of model fit, CV and coefficients\
+\
+		Note- month + site included as fixed effect\
+\
+	Run a generalized linear model on site densities (Gaussian distribution) - using MASS package\
+		Predictors (before stepwise selection): bottom do, bottom salinity, mean temperature, mean light lux, mean depth, species richness, \
+										shannon diversity, simpson diversity (no ph due to sensor issues) \
+		Stepwise predictor selection based on AIC \
+		Final best model: site_density ~ mean_light_lux + bottom_do + mean_temperature + mean_depth_m + mean_light_lux + shannon_div \
+ \
+\
+	Plot (treatment) density models - \
+		- Response variable: urchin density (not logged) -\
+		- Overdispersion: 2.35 (over dispersed)\
+		- Zero-inflated: 40% of data is zeros \
+		- Tweedie distribution\
+\
+	Inputs \
+		- cleaned_data.csv\
+\
+	Outputs\
+		- correlation_plot.png\
+		- testDispersion_plot.png\
+		- QQ_plot.png\
+		- residuals_vs_predictor.png\
+		- dot_and_whisker_plot.png\
+		- site_testDispersion_plot.png\
+		- site_QQ_plot.png\
+		- site_residuals_vs_predictor.png\
+\
+Notes \
+- when including site as random effect, KS is significant (bad model fit) \
+\
+5.Kelp_Analysis.Rmd \
+Plots mean survival and growth at each site, across months - looking at treatment (caged v open) \
+Plots mean survival and growth at each site, across months - looking at gravel size (small v large) \
+Performs t-test on caged v open effect on survival and growth \
+Determine difference in survivorship and growth across sites \
+Determine if kelp growth and survivorship differ across months\
+\
+\
+	Inputs\
+		- cleaned_monitoring_transects.csv\
+\
+\
+	Outputs\
+		- survival_site_month.png\
+		- growth_site_month.png\
+		- log_growth_site_month.png\
+		- surv_gravel_site_month.png\
+		- grwt_gravel_site_month.png\
+		- surv_open_v_caged.png\
+		- grwt_open_v_caged.png\
+		- loggrwt_open_v_caged.png\
+		- survival_by_month_se.png (plotted with standard error bars) \
+		- growth_by_month_se.png\
+		- surv_smallvlarge.png\
+		- growth_smallvlarge.png\
+\
+\
+6.Kelp_Survival_Models.Rmd\
+	Run GLMM with forward feature selection (Beta distribution) on kelp survival\
+		Response: kelp proportion (between 0-1, adjusted with small constant)\
+		Overdispersion = 0.37 (very high) \
+		Zero-inflation = None (when using adjusted with small constant) \
+		Random effects = site,  plot_id\
+		Testing predictors (before forward feature selection): mean_temp, mean_light, mean_depth, treatment, gravel_size\
+												     bottom_do, bottom_salinity, bottom_ph, simp_diversity, shannon_diversity\
+												     species_richness, site_density, urchin_density\
+		Final model (based on forward feature selection AIC considering collinearity: kelp_prop_adj <- month + gravel_size + simp_div + species_richness \
+		Model fit is BAD so we try other model types \
+	\
+		Note - did not use month as predictor \
+		\
+					\
+	Run Zero Inflated Negative Binomial GLMM\
+		Response: kelp survival (as an integer) \
+		Random effect: site plot_id\
+		Testing predictors (before forward feature selection): mean_temp, mean_light, mean_depth, treatment, gravel_size\
+												     bottom_do, bottom_salinity, bottom_ph, simp_diversity, \
+												     species_richness, site_density, urchin_density\
+		Forward feature selection \
+		Final model: kelp survival ~ treatment + gravel_size + mean_light_lux + mean_temperature_c + site_density + urchin_density + bottom_do + simp_div + month + \
+				 (1 | site) + (1+plot_id)\
+\
+		Note - used month as predictor \
+	\
+	Inputs \
+		- cleaned_green_gravel_monitoring.csv\
+		- cleaned_data.csv\
+\
+	\
+	Outputs\
+		- correlation_plot.png\
+		- beta_testDispersion_plot.png\
+		- beta_QQ_plot.png\
+		- beta_residuals_vs_predictor.png\
+		- zinb_testDispersion_plot.png\
+		- zinb_QQ_plot.png\
+		- zinb_residuals_vs_predictor.png\
+		- zinb_dot_and_whisker_plot.png\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0 \cf0 \cb1 \kerning1\expnd0\expndtw0 7_Kelp_Growth.Rmd \
+	Run GLMM forward feature selection (Tweedie distribution)\
+		Response: kelp_growth (summed per plot) \
+		Overdispersion: 661\
+		Zero-inflation: 48% of data is zeroes\
+		Testing predictors: mean_temp, mean_light, mean_depth, treatment, gravel_size\
+						bottom_do, bottom_salinity, bottom_ph, simp_diversity, shannon_diversity\
+						species_richness, site_density, urchin_density, month \
+		Forward feature selection \
+		Final model: kelp_growth ~ site_density + mean_temperature_c + bottom_ph + bottom_do + bottom_salinity + mean_depth + simp_div + month + \
+							 (1 | site) + (1+ plot_id)\
+		Note - month included as predictor \
+\
+\
+	Inputs: \
+		- cleaned_data.csv\
+\
+	Outputs\
+		- testDispersion_plot.png\
+		- QQ_plot.png\
+		- residuals_vs_predictor.png\
+		- dot_and_whisker_plot.png\
+\
+\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\tx19982\pardirnatural\partightenfactor0
+\cf0 8_PCA.Rmd \
+	Run PCA, group by different colors to see clustering, including treatment, site, density + plot_id\
+\
+	Inputs \
+		- cleaned_data.csv\
+		- site_coordinates.csv\
+\
+9_site_maps.Rmd \
+\
+	\
+	Inputs\
+		- site_coordinates.csv\
+\
+	Outputs\
+		- vancouver_island.png\
+		- canada.png\
+		- sites.png\
+\
+10_coefficients\
+	Creates combined plot of coefficients and confidence intervals for all models \
+\
+	Inputs\
+	- cleaned_data.csv\
+	\
+	Outputs\
+	- combined_dot_and_whisker_plot.png\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \
+	}
