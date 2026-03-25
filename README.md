@@ -1,1 +1,215 @@
 # Urchin_cages
+
+Note - This repository is dedicated solely to the source code and scripts used for this project. To maintain a clean and efficient version history, it does not contain raw data or results. Please refer to Rehill (2025) MSc thesis document in the University of Victoria archives. 
+
+SCRIPTS: 
+1_Processing_Environmental_Data.Rmd
+Reads all raw datafiles (from HOBO) and knits them together into combined file for later processing 
+Creates mean daily light (lux), mean daily temp (C) and mean daily current speed, over time graphs
+
+	Inputs
+	 - all HOBO logger files 
+	 - all ENV logger files
+	 - all tilt meter files 
+
+	Outputs
+     - combined_hobo.csv (all Hobo files combined)
+	- meanlight.jpg (mean light lux over time, by site) 
+	- combined_env.csv (all ENV files combined) 
+	- meantemp_bysite.jpg
+	- meantemp.jpg (all sites on same graph)
+	- combined_tilt.csv (all tilt meter data combined) 
+	- tilt_summary.csv	 (summarized current data by day, max & mean) 
+	- current.jpg
+
+- A lot of missing values in environmental data (due to sensor issues, weather contingencies, and aborted loggers ) 
+
+FIGURES - Supplemental Environmental Figure (stacked mean light, mean temp, mean current) 
+TABLEs - Creates summary .csv tables for each variable to be translated into a supplemental table of variable ranges (hobo_light_summary.csv, 
+
+2_QA_QC.Rmd 
+Cleaning raw urchin transect, kelp out planted plots and environmental data. Making certain variables numeric, fixing errors in data entry, create new more meaningful columns, renaming sites for alignment, removing leading/trailing zeros. For environmental data (HOBO), data was summarized based on conditions between monitoring periods. Data collected ‘during’ monitoring periods for continuous variables was omitted.
+
+Creates a combined cleaned dataset for analysis and modelling
+
+Percent kelp = number gravel with kelp / number of gravel total x 100 
+
+Urchin density (for plots) - calculated per meter squared - similar calculations were done for turban snails
+	For open plots - urchin density = total number urchins / 1 
+	For caged plots - urchin density = total number urchins / 4.5 
+
+Determines range of DO values for supplemental table
+
+Kelp_growth = summed growth per plot 
+	
+	Inputs
+	- urchin_monitoring_transects.csv  (raw data) 
+	- green_gravel_monitoring.csv (raw data) 
+	- YSI_measurement.csv (raw data) 
+	- combined_hobo.csv (output of previous script, processed data) 
+	- monitoring_periods.csv (described dates of monitoring periods) 
+	- combined_env.csv
+	- tilt_summary.csv
+
+	Outputs 
+	- cleaned_green_gravel_monitoring.csv (processed data) 
+	- cleaned_monitoring_transects.csv (processed_data) 
+	- cleaned_ysi_measurement.csv" (processed data) 
+	- summary_hobo.csv (processed data) 
+	- summary_hobo_light.csv (processed data) 
+	- density_urchin_transects.csv (summary of urchin densities per transect)
+	- summary_env.csv
+	- temp_summary (summary of HOBO and ENV logger measurements) 
+	- summary_tilt.csv
+	- cleaned_data.csv
+
+
+
+3_Density_Analysis.Rmd
+
+Determines the mean depths of sites, including the shallowest and deepest site. 
+Determines number of each urchin species observed across sites. 
+Creates bar plots of mean urchin and turban snail densities across treatments, and over time 
+Creates bar plots of baseline urchin densities 
+Creates stacked bar plots of species abundances at each site 
+
+	Inputs
+		- cleaned_monitoring_transects.csv
+		- cleaned_green_gravel_monitoring.csv
+
+	Outputs
+		-baseline_densities.png
+		-col_box_densities_by_site.png	
+		- legend_densities.png
+		- densities_month_site_col.png
+		- bwbar_treatment.png (turban snail + urchin) 
+		- bwdensity_site_month.png (turban snail + urchin) 
+		- grazer_counts.png
+		
+
+FIGURES: 
+- Baseline urchin densities (April) bar chart 
+- Urchin density by site (paired with map) 
+- Urchin density by site + month (supplemental) 
+- Bar plot of urchin in cages/open 
+- Bar plot of grazer types across sites 
+- Bar plot of turban snail densities cages/open
+- Mean turban snail density across months 
+
+
+4.Kelp_Analysis.Rmd 
+Plots mean survival and growth at each site, across months - looking at treatment (caged v open) 
+Plots mean survival and growth at each site, across months - looking at gravel size (small v large) 
+Performs t-test on caged v open effect on survival and growth 
+Determine difference in survivorship and growth across sites 
+Determine if kelp growth and survivorship differ across months
+Determines if kelp growth and survivorship differ between gravel sizes (large + small) 
+
+
+	Inputs
+		- cleaned_monitoring_transects.csv
+
+
+	Outputs
+		- bwsurvival_site_month.png
+		- bwgrowth_site_month.png
+		- bwsurv_gravel_site_month.png
+		- bwgrwt_gravel_site_month.png
+		- bwbar_surv_open_v_caged.png
+		- bwbar_grwt_open_v_caged.png
+		- bwbar_surv_smallvlarge.png
+		- bwbar_growth_smallvlarge.png
+		- bwbar_surv_open_v_caged_august.png
+		- summary_plot.png (survival + growth) 
+
+
+FIGURES 
+- Survival and growth over months, by site, by treatment
+- Survival and growth over months, by site, by gravel size 
+
+5.Experiment_GLMM.Rmd
+	Run GLMMs for kelp survival and kelp growth, with treatment always as a fixed fixed effect, and site always as a random effect 
+	Best models were selected using stepwise forward and backward feature selection based on AIC 
+	Model fit and evaluation visualized using DHARMA package 
+	VIF of selected predictors assessed
+	Kelp survival - binomial distribution 
+	Kelp growth - gamma
+	Predictors test - urchin site density, urchin plot density, snail site density, snail plot density, gravel size, mean/max temp, mean current
+				   mean light (lux), bottom do, bottom salinity
+	Create correlation plot for abiotic predictors 
+	Creates an estimate plot for both models 
+
+	Inputs: 
+		- cleaned_data.cs
+
+	Outputs
+		- abiotic_correlation_plot.png
+		- survival_testDispersion_plot.png
+		- survival_QQ_plot.png
+		- suvival_residuals_vs_predictor.png
+		- growth_plot_testDispersion_plot.png
+		- growth_plot_QQ_plot.png
+		- growth_plot_residuals_vs_predictor.png
+		- combined_dot_and_whisker_plot.png
+
+FIGURES 
+- model evaluation plots (supplements) 
+- model estimates plots (supplements) 
+
+
+6_Urchin_GLMM.Rmd 
+	Run a GLMM for urchin densities (in plots) with forward and backward feature selection based on AIC, tweedie distribution 
+	Predictors: mean/max temp, mean current, bottom do, bottom salinity
+	Site as fixed effect
+	Interaction between treatment*site density 
+
+	Inputs 
+		- cleaned_data.csv
+	Outputs 
+		- ploturchin_testDispersion_plot.png
+		- ploturchin_QQ_plot.png
+		- ploturchin_residuals_vs_predictor.png
+
+6_site_maps.Rmd 
+Makes a map of our study site, coloured and with symbology of low, medium and high urchin density sites 
+	
+	Inputs
+		- site_coordinates.csv
+
+	Outputs
+		- vancouver_island.png
+		- canada.png
+		- sites.png
+
+FIGURES 
+
+8_Regressions.Rmd
+Created pairwise correlation plot among environmental variables, with linear trend lines
+Ran linear regressions on response variables (urchin density, kelp survival, kelp growth) to environmental and other predictors.
+	Inputs 
+		- clean_data.csv
+
+	Outputs
+		- environmental_scatterplot_matrix.png
+
+
+
+
+COLOR SCHEME
+
+Low urchin density: #4da607 (green)
+Med urchin density: #f9cd44 (darker yellow)
+High urchin density: #cd3737 (red) 
+
+Caged: #FF5733 (red) 
+Uncaged: #076fa6 (blue)
+
+#62a4ea (
+
+#eacf62
+
+BY SITE 
+with colors: "Ed King" = "#FF5733", "Ellis N" = "#4da607", "Ellis S" = "grey", "Nanat" = "#62a4ea", "Dixon" = "#eacf62", "Taylor" = "#076fa6",
+
+
+Multispecies_Multispecies
